@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace RedaFasta
 {
@@ -57,6 +59,8 @@ namespace RedaFasta
 		readonly char[] _lastChars;
 
 		char[] _charBuffer;
+		Task<int>? _numberCharsInBuffer = null;
+
 
 		readonly int _bufferSize;
 		readonly int _bufferCount;
@@ -64,7 +68,7 @@ namespace RedaFasta
 		bool _inited = false;
 
 
-		class Buffer
+		public class Buffer
 		{
 			public ulong[] Data;
 			public int Size = 0;
@@ -75,11 +79,15 @@ namespace RedaFasta
 				Data = data;
 			}
 
-			public void Fill(char[] charBuffer, int start, int numberOfItems, FastaFileReader parent)
-			{
-				Size = parent.Translate(Data, charBuffer, start, numberOfItems);
-			}
+
 		}
+
+		//This is buffer method! 
+		void Fill(Buffer it, char[] charBuffer, int start, int numberOfItems, FastaFileReader parent)
+		{
+			it.Size = parent.Translate(it.Data, charBuffer, start, numberOfItems);
+		}
+
 		List<Buffer> _freeBuffers = new List<Buffer>();
 		List<Buffer> _usedBuffers = new List<Buffer>();
 
@@ -129,8 +137,17 @@ namespace RedaFasta
 			{
 				_freeBuffers.Add(new Buffer(new ulong[_bufferSize]));
 			}
-			int read = FillCharBuffer(_charBuffer);
 
+			if (_numberCharsInBuffer is null)
+			{
+				FillCharBufferAsync();
+			}
+
+			_numberCharsInBuffer!.Wait();
+
+			int read = _numberCharsInBuffer.Result;
+
+			_numberCharsInBuffer = null;
 
 			int instancesToRun = read / _bufferSize;
 			if (read % _bufferSize != 0)
@@ -151,22 +168,36 @@ namespace RedaFasta
 				{
 					if (i != instancesToRun - 1)
 					{
-						workedOn[i].Fill(_charBuffer, i * _bufferSize, _bufferSize + _lastCharsLength, this);
+						Fill(workedOn[i], _charBuffer, i * _bufferSize, _bufferSize + _lastCharsLength, this);
 
 					}
 					else if (read % _bufferSize == 0)
 					{
-						workedOn[i].Fill(_charBuffer, i * _bufferSize, _bufferSize + _lastCharsLength, this);
+						Fill(workedOn[i], _charBuffer, i * _bufferSize, _bufferSize + _lastCharsLength, this);
 
 					}
 					else
 					{
-						workedOn[i].Fill(_charBuffer, i * _bufferSize, read % _bufferSize + _lastCharsLength, this);
+						Fill(workedOn[i], _charBuffer, i * _bufferSize, read % _bufferSize + _lastCharsLength, this);
 					}
 				});
 
 			foreach (var buffer in workedOn) _usedBuffers.Add(buffer);
+
+			FillCharBufferAsync();
 		}
+
+		void FillCharBufferAsync()
+		{
+			if (_numberCharsInBuffer is null)
+			{
+				_numberCharsInBuffer = Task.Run(() =>
+			  {
+				  return FillCharBuffer(_charBuffer);
+			  });
+			}
+		}
+
 		int FillCharBuffer(char[] buffer)
 		{
 
@@ -193,6 +224,30 @@ namespace RedaFasta
 			return read;
 		}
 
+		public void RecycleBuffer(Buffer buffer)
+		{
+			buffer.Size = 0;
+			buffer.Used = 0;
+			_freeBuffers.Add(buffer);
+		}
+
+		public Buffer? BorrowBuffer()
+		{
+			if (_usedBuffers.Count == 0)
+			{
+				FillKMerBuffers();
+			}
+
+			if (_finished == true && _usedBuffers.Count == 0) return null;
+
+
+			Buffer buffer = _usedBuffers[_usedBuffers.Count - 1];
+			_usedBuffers.RemoveAt(_usedBuffers.Count - 1);
+			return buffer;
+
+
+
+		}
 		public int FillBuffer(ulong[] kMers)
 		{
 
@@ -235,6 +290,8 @@ namespace RedaFasta
 			//  C 01000011 -> 01 -> 01
 			//  G 01000111 -> 11 -> 10
 			//  T 01010100 -> 10 -> 11
+
+
 
 			ulong[] permutation = { 0, 1, 3, 2 };
 			ulong header = 0b11;

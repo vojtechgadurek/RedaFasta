@@ -31,12 +31,39 @@ namespace RedaFastaBenchmarks
 		}
 
 		[Benchmark]
+		public int Borrowing()
+		{
+			var textReader = new StreamReader("test.test");
+			var config = FastaFile.Open(textReader);
+
+			var fastaFileReader = new FastaFileReader(config.kMerSize, config.nCharsInFile, textReader, 1024 * 1024);
+
+			ulong[] kMerBuffer = new ulong[1024 * 1024];
+
+			int returned = 0;
+			ulong sum = 0;
+			while (true)
+			{
+				var returnedNow = fastaFileReader.BorrowBuffer();
+				if (returnedNow == null) break;
+				returned += returnedNow.Size - returnedNow.Used;
+				fastaFileReader.RecycleBuffer(returnedNow);
+			}
+
+			if (returned != 100_000_000 - 30) throw new Exception($"Returned is not equal to 100_000_000 {returned}");
+			fastaFileReader.Dispose();
+			return (int)sum;
+		}
+
+
+
+		[Benchmark]
 		public int BaseTest()
 		{
 			var textReader = new StreamReader("test.test");
 			var config = FastaFile.Open(textReader);
 
-			var fastaFileReader = new FastaFileReader(config.kMerSize, config.nCharsInFile, textReader, 1024 * 128);
+			var fastaFileReader = new FastaFileReader(config.kMerSize, config.nCharsInFile, textReader, 1024 * 1024);
 
 			ulong[] kMerBuffer = new ulong[1024 * 1024];
 
@@ -47,16 +74,40 @@ namespace RedaFastaBenchmarks
 				var returnedNow = fastaFileReader.FillBuffer(kMerBuffer);
 				if (returnedNow == 0) break;
 				returned += returnedNow;
-				foreach (var item in kMerBuffer)
-				{
-					sum += item;
-				}
 			}
 
 			if (returned != 100_000_000 - 30) throw new Exception($"Returned is not equal to 100_000_000 {returned}");
 			fastaFileReader.Dispose();
 			return (int)sum;
 		}
+
+		[Benchmark]
+		public int TranslatorTest()
+		{
+			var textReader = new StreamReader("test.test");
+			var config = FastaFile.Open(textReader);
+
+			var fastaFileReader = new FastaFileReader(config.kMerSize, config.nCharsInFile, textReader, init: false);
+
+			ulong[] kMerBuffer = new ulong[1024 * 1024];
+
+			int returned = 0;
+			ulong sum = 0;
+
+			char[] buffer = new char[1024 * 1024];
+			while (true)
+			{
+				var c = textReader.Read(buffer);
+				var returnedNow = fastaFileReader.Translate(kMerBuffer, buffer, 0, c);
+				if (returnedNow == 0) break;
+				returned += returnedNow;
+			}
+
+			fastaFileReader.Dispose();
+			return (int)sum;
+		}
+
+
 		[GlobalCleanup]
 		public void Cleanup()
 		{
