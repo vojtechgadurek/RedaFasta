@@ -10,15 +10,29 @@ namespace RedaFasta
 {
 	public static class FastaFile
 	{
+		/// <summary>
+		/// Opens a Fasta file and returns a tuple containing the TextReader, kMerSize, and nCharsInFile.
+		/// </summary>
+		/// <param name="textReader">The TextReader to read the Fasta file.</param>
+		/// <returns>A tuple containing the TextReader, kMerSize, and nCharsInFile.</returns>
 		public static (TextReader textReader, int kMerSize, long nCharsInFile) Open(TextReader textReader)
 		{
 			var firstLine = textReader.ReadLine();
 			if (firstLine is null) throw new InvalidOperationException($"File is empty");
 			var (size, nCharsInFile) = ParseFirstLineData(firstLine);
 			return (textReader, size, nCharsInFile);
-
 		}
 
+		/// <summary>
+		/// Parses the header line of a Fasta file and returns a dictionary of the parsed data.
+		/// </summary>
+		/// <param name="header">The header line to parse.</param>
+		/// <returns>A dictionary where the key is the parameter name and the value is the parameter value.</returns>
+		/// <exception cref="ArgumentException">Thrown when the header is not in the correct format.</exception>
+		/// <remarks>
+		/// This method splits the header line by spaces and then by equals sign to extract the parameter name and value.
+		/// It skips the first item because it is assumed to be the identifier of the sequence.
+		/// </remarks>
 		public static IDictionary<string, string> ParseHeaderLine(string header)
 		{
 			var splited = header.Split(' ');
@@ -34,9 +48,19 @@ namespace RedaFasta
 			}
 
 			return dictionary;
-
 		}
 
+		/// <summary>
+		/// Parses the first line of data in a Fasta file and returns a tuple containing the size and nCharsInFile.
+		/// </summary>
+		/// <param name="header">The first line of data to parse.</param>
+		/// <returns>A tuple where the first item is the size (k) and the second item is the number of characters in the file (l).</returns>
+		/// <exception cref="ArgumentException">Thrown when the header does not contain the required parameters (k and l).</exception>
+		/// <remarks>
+		/// This method uses the ParseHeaderLine method to parse the header line and extract the parameters.
+		/// It then checks if the required parameters (k and l) are present in the dictionary returned by ParseHeaderLine.
+		/// If any of the required parameters are missing, it throws an ArgumentException.
+		/// </remarks>
 		public static (int size, long nCharsInFile) ParseFirstLineData(string header)
 		{
 
@@ -124,6 +148,7 @@ namespace RedaFasta
 
 			if (init == true) Init();
 		}
+
 
 		public void Init()
 		{
@@ -290,7 +315,6 @@ namespace RedaFasta
 			//  C 01000011 -> 01 -> 01
 			//  G 01000111 -> 11 -> 10
 			//  T 01010100 -> 10 -> 11
-
 
 
 			ulong[] permutation = { 0, 1, 3, 2 };
