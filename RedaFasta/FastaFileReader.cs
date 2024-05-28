@@ -90,7 +90,8 @@ namespace RedaFasta
 		readonly int _bufferCount;
 		bool _finished = false;
 		bool _inited = false;
-
+		int _nThreadsUsed;
+		int _nThreadsMax;
 
 		public class Buffer
 		{
@@ -116,7 +117,7 @@ namespace RedaFasta
 		List<Buffer> _usedBuffers = new List<Buffer>();
 
 		TextReader _textReader;
-		public FastaFileReader(int size, long length, TextReader textReader, int bufferSize = 1024 * 1024, int bufferCount = 8, bool init = true)
+		public FastaFileReader(int size, long length, TextReader textReader, int bufferSize = 1024 * 1024, int bufferCount = 8, bool init = true, int maxThreadsUsed = 4)
 		{
 			if (size < 1) throw new ArgumentException("Size of kMer is too small, min is 1");
 			if (size > 31) throw new ArgumentException($"Size of kMer is too big, max is 31, currently {size}");
@@ -132,6 +133,8 @@ namespace RedaFasta
 			_length = length;
 			_bufferSize = bufferSize;
 			_bufferCount = bufferCount;
+			_nThreadsMax = maxThreadsUsed;
+			_nThreadsUsed = 0;
 
 			_sizeMask = (1UL << (size * 2 + 2)) - 1 - 0b11;
 			_lastChars = new char[size - 1];
@@ -188,8 +191,11 @@ namespace RedaFasta
 				workedOn.Add(buffer);
 			}
 
-			Parallel.For(0, instancesToRun,
-				(i) =>
+			Task[] tasks = new Task[instancesToRun];
+
+			for (int i = 0; i < instancesToRun; i++)
+			{
+				tasks[i] = Task.Run(() =>
 				{
 					if (i != instancesToRun - 1)
 					{
@@ -206,6 +212,9 @@ namespace RedaFasta
 						Fill(workedOn[i], _charBuffer, i * _bufferSize, read % _bufferSize + _lastCharsLength, this);
 					}
 				});
+			}
+
+			var task = Task.WhenAll(tasks);
 
 			foreach (var buffer in workedOn) _usedBuffers.Add(buffer);
 
@@ -218,7 +227,8 @@ namespace RedaFasta
 			{
 				_numberCharsInBuffer = Task.Run(() =>
 			  {
-				  return FillCharBuffer(_charBuffer);
+				  var answer = FillCharBuffer(_charBuffer);
+				  return answer;
 			  });
 			}
 		}
