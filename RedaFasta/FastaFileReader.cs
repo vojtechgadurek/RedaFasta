@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 using static System.Runtime.InteropServices.JavaScript.JSType;
@@ -24,14 +25,14 @@ namespace RedaFasta
 		}
 
 		/// <summary>
-		/// Parses the header line of a Fasta file and returns a dictionary of the parsed data.
+		/// Parses the header line of a Fasta file and returns a dictionary of the parsed _data.
 		/// </summary>
 		/// <param name="header">The header line to parse.</param>
 		/// <returns>A dictionary where the key is the parameter name and the value is the parameter value.</returns>
 		/// <exception cref="ArgumentException">Thrown when the header is not in the correct format.</exception>
 		/// <remarks>
 		/// This method splits the header line by spaces and then by equals sign to extract the parameter name and value.
-		/// It skips the first item because it is assumed to be the identifier of the sequence.
+		/// It skips the first item because It is assumed to be the identifier of the sequence.
 		/// </remarks>
 		public static IDictionary<string, string> ParseHeaderLine(string header)
 		{
@@ -51,15 +52,15 @@ namespace RedaFasta
 		}
 
 		/// <summary>
-		/// Parses the first line of data in a Fasta file and returns a tuple containing the size and nCharsInFile.
+		/// Parses the first line of _data in a Fasta file and returns a tuple containing the size and nCharsInFile.
 		/// </summary>
-		/// <param name="header">The first line of data to parse.</param>
+		/// <param name="header">The first line of _data to parse.</param>
 		/// <returns>A tuple where the first item is the size (k) and the second item is the number of characters in the file (l).</returns>
 		/// <exception cref="ArgumentException">Thrown when the header does not contain the required parameters (k and l).</exception>
 		/// <remarks>
 		/// This method uses the ParseHeaderLine method to parse the header line and extract the parameters.
 		/// It then checks if the required parameters (k and l) are present in the dictionary returned by ParseHeaderLine.
-		/// If any of the required parameters are missing, it throws an ArgumentException.
+		/// If any of the required parameters are missing, It throws an ArgumentException.
 		/// </remarks>
 		public static (int size, long nCharsInFile) ParseFirstLineData(string header)
 		{
@@ -92,32 +93,104 @@ namespace RedaFasta
 		bool _inited = false;
 		int _nThreadsUsed;
 		int _nThreadsMax;
+		BufferFiller[] _workers;
 
+
+		public class BufferWorker
+		{
+			Thread _thread;
+			Buffer _buffer;
+			char[] _data;
+			int _nChars;
+			int _start;
+			FastaFileReader _parent;
+			bool _finished;
+			bool Running => _thread.ThreadState == ThreadState.Running;
+			public BufferWorker()
+			{
+				_thread = new Thread(TranslateInner);
+			}
+
+			void TranslateInner()
+			{
+				while (true)
+				{
+					if (_finished == true) return;
+					_buffer.Used = 0;
+					_buffer.Size = _parent.Translate(_buffer.Data, _data, _start, _nChars);
+					Thread.Sleep(Timeout.Infinite);
+				}
+			}
+			public bool TryTranslate(Buffer buffer, char[] data, int start, int nChars)
+			{
+				if (_thread.ThreadState == ThreadState.Running) return false;
+				_buffer = buffer;
+				_data = data;
+				_start = start;
+				_nChars = nChars;
+
+				_thread.Start();
+				return true;
+			}
+
+			public void Close()
+			{
+				_finished = true;
+				_thread.Start();
+			}
+		}
 		public class Buffer
 		{
 			public ulong[] Data;
 			public int Size = 0;
 			public int Used = 0;
-
 			public Buffer(ulong[] data)
 			{
 				Data = data;
 			}
-
-
 		}
 
-		//This is buffer method! 
-		void Fill(Buffer it, char[] charBuffer, int start, int numberOfItems, FastaFileReader parent)
+		//This is _buffer method! 
+		static void Fill(Buffer it, char[] charBuffer, int start, int numberOfItems, FastaFileReader parent)
 		{
 			it.Size = parent.Translate(it.Data, charBuffer, start, numberOfItems);
 		}
 
+		class BufferFiller
+		{
+
+			public Buffer? It;
+			public char[]? CharBuffer;
+			public int Start;
+			public int NumberOfItems;
+			public FastaFileReader? Parent;
+			public Task? Task;
+			public BufferFiller()
+			{
+			}
+
+			public void Fill()
+			{
+				Task = Task.Run(() =>
+				{
+					FastaFileReader.Fill(It, CharBuffer, Start, NumberOfItems, Parent);
+				});
+			}
+
+			public void Clear()
+			{
+				It = null;
+				CharBuffer = null;
+				Parent = null;
+				Task = null;
+			}
+
+		}
 		List<Buffer> _freeBuffers = new List<Buffer>();
 		List<Buffer> _usedBuffers = new List<Buffer>();
 
 		TextReader _textReader;
-		public FastaFileReader(int size, long length, TextReader textReader, int bufferSize = 1024 * 1024, int bufferCount = 8, bool init = true, int maxThreadsUsed = 4)
+		public FastaFileReader(int size, long length, TextReader textReader, int bufferSize = 1024 * 64, int bufferCount = 16, bool init = true, int maxThreadsUsed = 4)
 		{
 			if (size < 1) throw new ArgumentException("Size of kMer is too small, min is 1");
 			if (size > 31) throw new ArgumentException($"Size of kMer is too big, max is 31, currently {size}");
@@ -126,20 +199,23 @@ namespace RedaFasta
 
 			if (bufferCount < 1) throw new ArgumentException("Buffer count is too small, min is 1");
 
-
 			_size = size;
 			_textReader = textReader;
 			_charsLeft = length;
 			_length = length;
 			_bufferSize = bufferSize;
 			_bufferCount = bufferCount;
-			_nThreadsMax = maxThreadsUsed;
+			_nThreadsMax = bufferCount;
 			_nThreadsUsed = 0;
+			_workers = new BufferFiller[bufferCount];
+			for (int i = 0; i < _nThreadsMax; i++)
+			{
+				_workers[i] = new BufferFiller();
+			}
 
 			_sizeMask = (1UL << (size * 2 + 2)) - 1 - 0b11;
 			_lastChars = new char[size - 1];
 			_lastCharsLength = _lastChars.Length;
-
 
 			_charBuffer = new char[_bufferSize * _bufferCount + _lastCharsLength];
 
@@ -191,30 +267,33 @@ namespace RedaFasta
 				workedOn.Add(buffer);
 			}
 
-			Task[] tasks = new Task[instancesToRun];
 
 			for (int i = 0; i < instancesToRun; i++)
 			{
-				tasks[i] = Task.Run(() =>
+				var thread = _workers[i];
+				thread.It = workedOn[i];
+				thread.CharBuffer = _charBuffer;
+				thread.Start = i * _bufferSize;
+				thread.Parent = this;
+
+				if (i != instancesToRun - 1 || read % _bufferSize == 0)
 				{
-					if (i != instancesToRun - 1)
-					{
-						Fill(workedOn[i], _charBuffer, i * _bufferSize, _bufferSize + _lastCharsLength, this);
 
-					}
-					else if (read % _bufferSize == 0)
-					{
-						Fill(workedOn[i], _charBuffer, i * _bufferSize, _bufferSize + _lastCharsLength, this);
+					thread.NumberOfItems = _bufferSize + _lastCharsLength;
+				}
+				else
+				{
+					thread.NumberOfItems = read % _bufferSize + _lastCharsLength;
+				}
+				thread.Fill();
+			};
 
-					}
-					else
-					{
-						Fill(workedOn[i], _charBuffer, i * _bufferSize, read % _bufferSize + _lastCharsLength, this);
-					}
-				});
+			for (int i = 0; i < instancesToRun; i++)
+			{
+				_workers[i].Task.Wait();
+				_workers[i].Clear();
 			}
 
-			var task = Task.WhenAll(tasks);
 
 			foreach (var buffer in workedOn) _usedBuffers.Add(buffer);
 
@@ -227,8 +306,7 @@ namespace RedaFasta
 			{
 				_numberCharsInBuffer = Task.Run(() =>
 			  {
-				  var answer = FillCharBuffer(_charBuffer);
-				  return answer;
+				  return FillCharBuffer(_charBuffer);
 			  });
 			}
 		}
@@ -279,9 +357,6 @@ namespace RedaFasta
 			Buffer buffer = _usedBuffers[_usedBuffers.Count - 1];
 			_usedBuffers.RemoveAt(_usedBuffers.Count - 1);
 			return buffer;
-
-
-
 		}
 		public int FillBuffer(ulong[] kMers)
 		{
