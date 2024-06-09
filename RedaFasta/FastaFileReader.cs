@@ -190,7 +190,7 @@ namespace RedaFasta
 		List<Buffer> _usedBuffers = new List<Buffer>();
 
 		TextReader _textReader;
-		public FastaFileReader(int size, long length, TextReader textReader, int bufferSize = 1024 * 64, int bufferCount = 16, bool init = true, int maxThreadsUsed = 4)
+		public FastaFileReader(int size, long length, TextReader textReader, int bufferSize = 1024 * 64, int bufferCount = 16, bool init = true)
 		{
 			if (size < 1) throw new ArgumentException("Size of kMer is too small, min is 1");
 			if (size > 31) throw new ArgumentException($"Size of kMer is too big, max is 31, currently {size}");
