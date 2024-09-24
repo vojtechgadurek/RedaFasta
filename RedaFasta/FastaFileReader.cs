@@ -83,10 +83,10 @@ namespace RedaFasta
         }
 
         /// <summary>
-        /// Parses the first line of _data in a Fasta file and returns a tuple containing the size and nCharsInFile.
+        /// Parses the first line of _data in a Fasta file and returns a tuple containing the kMerLength and nCharsInFile.
         /// </summary>
         /// <param name="header">The first line of _data to parse.</param>
-        /// <returns>A tuple where the first item is the size (k) and the second item is the number of characters in the file (l).</returns>
+        /// <returns>A tuple where the first item is the kMerLength (k) and the second item is the number of characters in the file (l).</returns>
         /// <exception cref="ArgumentException">Thrown when the header does not contain the required parameters (k and l).</exception>
         /// <remarks>
         /// This method uses the ParseHeaderLine method to parse the header line and extract the parameters.
@@ -109,7 +109,7 @@ namespace RedaFasta
     public class FastaFileReader : IFastaFileReader
     {
         readonly ulong _sizeMask;
-        readonly int _size;
+        public readonly int KMerLength;
         long _charsLeft;
         readonly int _lastCharsLength;
         long _length;
@@ -222,16 +222,16 @@ namespace RedaFasta
         List<Buffer> _usedBuffers = new List<Buffer>();
 
         TextReader _textReader;
-        public FastaFileReader(int size, long length, TextReader textReader, int bufferSize = 1024 * 64, int bufferCount = 16, bool init = true)
+        public FastaFileReader(int kMerLength, long length, TextReader textReader, int bufferSize = 1024 * 64, int bufferCount = 16, bool init = true)
         {
-            if (size < 1) throw new ArgumentException("Size of kMer is too small, min is 1");
-            if (size > 31) throw new ArgumentException($"Size of kMer is too big, max is 31, currently {size}");
-            if (bufferSize < 1) throw new ArgumentException("Buffer size is too small, min is 1");
-            if (size - 1 > bufferSize) bufferSize = size - 1;
+            if (kMerLength < 1) throw new ArgumentException("Size of kMer is too small, min is 1");
+            if (kMerLength > 31) throw new ArgumentException($"Size of kMer is too big, max is 31, currently {kMerLength}");
+            if (bufferSize < 1) throw new ArgumentException("Buffer kMerLength is too small, min is 1");
+            if (kMerLength - 1 > bufferSize) bufferSize = kMerLength - 1;
 
             if (bufferCount < 1) throw new ArgumentException("Buffer count is too small, min is 1");
 
-            _size = size;
+            KMerLength = kMerLength;
             _textReader = textReader;
             _charsLeft = length;
             _length = length;
@@ -245,8 +245,8 @@ namespace RedaFasta
                 _workers[i] = new BufferFiller();
             }
 
-            _sizeMask = (1UL << (size * 2)) - 1;
-            _lastChars = new char[size - 1];
+            _sizeMask = (1UL << (kMerLength * 2)) - 1;
+            _lastChars = new char[kMerLength - 1];
             _lastCharsLength = _lastChars.Length;
 
             _charBuffer = new char[_bufferSize * _bufferCount + _lastCharsLength];
@@ -346,7 +346,7 @@ namespace RedaFasta
         int FillCharBuffer(char[] buffer)
         {
 
-            //Fill first _size bucket with overfill from last
+            //Fill first KMerLength bucket with overfill from last
             for (int i = 0; i < _lastCharsLength; i++)
             {
                 buffer[i] = _lastChars[i];
@@ -360,7 +360,7 @@ namespace RedaFasta
             _charsLeft -= read;
             if (read == 0) _finished = true;
 
-            //Save last _size chars
+            //Save last KMerLength chars
             for (int i = 0; i < _lastCharsLength && read > i; i++)
             {
                 _lastChars[i] = buffer[read + i];
@@ -452,7 +452,7 @@ namespace RedaFasta
 
 
                 complement >>>= 2;
-                complement |= (~permutation[val] << (_size * 2 - 2));
+                complement |= (~permutation[val] << (KMerLength * 2 - 2));
 
                 kMer &= _sizeMask;
                 complement &= _sizeMask;
