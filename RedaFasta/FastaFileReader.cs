@@ -111,6 +111,7 @@ namespace RedaFasta
         readonly ulong _sizeMask;
         public readonly int KMerLength;
         long _charsLeft;
+        public long CharsLeft { get => _charsLeft; }
         readonly int _lastCharsLength;
         long _length;
         readonly char[] _lastChars;
