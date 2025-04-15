@@ -86,10 +86,6 @@ namespace RedaFastaTest
 			Data.Add((">small3 k=2 l=10\naTaaaaaaaaaa\n", new string[] { "TA", }));
 
 			Data.Add((">small3 k=2 l=10\nCaaCaaTaaaaaaaaaa\n", new string[] { "CA", "CA", "TA" }));
-
-
-
-
 		}
 	}
 }

@@ -508,10 +508,8 @@ namespace RedaFasta
                     kMers[kMerCreated] = ApplyHeader(kMerSelected);
                     kMerCreated++;
                 };
-
                 index++;
             }
-
             return kMerCreated;
         }
 

@@ -202,6 +202,8 @@ namespace RedaFastaTest
 			{
 				var returnedNow = fastaFileReader.FillBuffer(kMerBuffer);
 				if (returnedNow == 0) break;
+
+				Assert.True(kMerBuffer.Take(returnedNow).All(x => (x & 0b11) == 0b11));
 				returned += returnedNow;
 				foreach (var item in kMerBuffer)
 				{
